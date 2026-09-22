@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PARTIAL
+  PAID
+  OVERDUE
+  VOID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK
+  CHECK
+  MOBILE
+  OTHER
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+  NONE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STAFF)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  invoicesCreated Invoice[] @relation("InvoiceCreator")
+  payments        Payment[]
+  refunds         Refund[]
+  auditLogs       AuditLog[]
+}
+
+model Customer {
+  id             String    @id @default(cuid())
+  name           String
+  company        String?
+  email          String?
+  phone          String?
+  billingAddress String?
+  taxId          String?
+  notes          String?
+  archived       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  invoices Invoice[]
+
+  @@index([email])
+  @@index([name])
+}
+
+model CatalogItem {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  sku            String?  @unique
+  unitPriceCents Int
+  taxRateId      String?
+  active         Boolean  @default(true)
+
+  taxRate       TaxRate?      @relation(fields: [taxRateId], references: [id])
+  invoiceLines  InvoiceLine[]
+
+  @@index([name])
+}
+
+model TaxRate {
+  id          String  @id @default(cuid())
+  name        String
+  ratePercent Decimal @db.Decimal(6, 4)
+  active      Boolean @default(true)
+  isDefault   Boolean @default(false)
+
+  catalogItems CatalogItem[]
+  invoiceLines InvoiceLine[]
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  invoiceNumber  String        @unique
+  customerId     String
+  issuedAt       DateTime      @default(now())
+  dueAt          DateTime?
+  status         InvoiceStatus @default(DRAFT)
+  subtotalCents  Int           @default(0)
+  discountCents  Int           @default(0)
+  taxCents       Int           @default(0)
+  totalCents     Int           @default(0)
+  paidCents      Int           @default(0)
+  balanceCents   Int           @default(0)
+  currency       String        @default("USD")
+  notes          String?
+  paymentTerms   String?
+  createdById    String
+  updatedAt      DateTime      @updatedAt
+
+  customer  Customer      @relation(fields: [customerId], references: [id])
+  createdBy User          @relation("InvoiceCreator", fields: [createdById], references: [id])
+  lines     InvoiceLine[]
+  payments  Payment[]
+  refunds   Refund[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([issuedAt])
+}
+
+model InvoiceLine {
+  id             String       @id @default(cuid())
+  invoiceId      String
+  catalogItemId  String?
+  description    String
+  quantity       Decimal      @db.Decimal(12, 4)
+  unitPriceCents Int
+  discountType   DiscountType @default(NONE)
+  discountValue  Decimal      @default(0) @db.Decimal(12, 4)
+  taxRateId      String?
+  lineTotalCents Int
+
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id])
+  taxRate     TaxRate?     @relation(fields: [taxRateId], references: [id])
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  invoiceId       String
+  amountCents     Int
+  method          PaymentMethod
+  paidAt          DateTime      @default(now())
+  referenceNumber String?
+  staffId         String
+  note            String?
+  idempotencyKey  String        @unique
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id])
+  staff   User     @relation(fields: [staffId], references: [id])
+  refunds Refund[]
+
+  @@index([invoiceId])
+}
+
+model Refund {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  paymentId   String?
+  amountCents Int
+  reason      String
+  refundedAt  DateTime @default(now())
+  staffId     String
+  note        String?
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
+  staff   User     @relation(fields: [staffId], references: [id])
+
+  @@index([invoiceId])
+}
+
+model BusinessSettings {
+  id                   Int     @id @default(1)
+  name                 String  @default("Brice Beauty Supply")
+  logoUrl              String?
+  address              String?
+  phone                String?
+  email                String?
+  website              String?
+  taxId                String?
+  currency             String  @default("USD")
+  locale               String  @default("en-US")
+  timezone             String  @default("America/New_York")
+  dateFormat           String  @default("MM/dd/yyyy")
+  invoicePrefix        String  @default("BBS")
+  nextInvoiceSeq       Int     @default(1)
+  defaultPaymentTerms  String?
+  defaultNotes         String?
+  footer               String?
+  receiptAppearance    Json    @default("{}")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  userId     String
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
