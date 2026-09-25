@@ -1,0 +1,6 @@
+# Superpowers session artifacts (visual companion mockups, task state)
+.superpowers/
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
