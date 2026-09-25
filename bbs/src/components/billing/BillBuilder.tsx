@@ -12,6 +12,7 @@ import { CatalogPicker, type CatalogPick } from "./CatalogPicker";
 import { DiscountPicker, type DiscountValue } from "./DiscountPicker";
 import { LineItemRow, type DraftLine } from "./LineItemRow";
 import { TotalsPanel } from "./TotalsPanel";
+import { PaymentModal } from "./PaymentModal";
 import { createDraftBill } from "@/actions/bills";
 
 interface Props {
@@ -63,6 +64,11 @@ export function BillBuilder({ taxRates, defaultTaxRateId }: Props) {
   const [dueAt, setDueAt] = useState("");
   const [banner, setBanner] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [chargeAfterSave, setChargeAfterSave] = useState<{
+    id: string;
+    invoiceNumber: string;
+    balanceCents: number;
+  } | null>(null);
 
   const taxPercentById = useMemo(
     () => new Map(taxRates.map((t) => [t.id, Number(t.ratePercent)])),
@@ -127,7 +133,7 @@ export function BillBuilder({ taxRates, defaultTaxRateId }: Props) {
     return true;
   }
 
-  function onSubmit() {
+  function submit(mode: "draft" | "charge") {
     setBanner(null);
     if (!canSubmit() || !customer) {
       setBanner("Add a customer and at least one line item.");
@@ -147,10 +153,19 @@ export function BillBuilder({ taxRates, defaultTaxRateId }: Props) {
           })),
           invoiceDiscount,
           notes: notes.trim() ? notes.trim() : null,
-          dueAt: dueAt ? dueAt : null
+          dueAt: dueAt ? dueAt : null,
+          chargeImmediately: mode === "charge"
         });
-        router.push(`/invoices/${res.invoice.id}`);
-        router.refresh();
+        if (mode === "charge") {
+          setChargeAfterSave({
+            id: res.invoice.id,
+            invoiceNumber: res.invoice.invoiceNumber,
+            balanceCents: res.invoice.balanceCents
+          });
+        } else {
+          router.push(`/invoices/${res.invoice.id}`);
+          router.refresh();
+        }
       } catch (err) {
         setBanner(err instanceof Error ? err.message : "Save failed.");
       }
@@ -204,7 +219,12 @@ export function BillBuilder({ taxRates, defaultTaxRateId }: Props) {
             value={invoiceDiscount}
             onChange={setInvoiceDiscount}
           />
-          <Input label="Due date" type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+          <Input
+            label="Due date"
+            type="date"
+            value={dueAt}
+            onChange={(e) => setDueAt(e.target.value)}
+          />
           <div>
             <label htmlFor="notes" className="block text-sm text-muted mb-1">
               Notes
@@ -224,13 +244,35 @@ export function BillBuilder({ taxRates, defaultTaxRateId }: Props) {
         <TotalsPanel totals={totals} />
         <Button
           type="button"
-          onClick={onSubmit}
+          onClick={() => submit("charge")}
           disabled={isPending || !canSubmit()}
           className="w-full"
         >
-          {isPending ? "Saving draft…" : "Save draft"}
+          {isPending ? "Saving…" : "Save & charge"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => submit("draft")}
+          disabled={isPending || !canSubmit()}
+          className="w-full"
+        >
+          Save draft
         </Button>
       </div>
+
+      {chargeAfterSave && (
+        <PaymentModal
+          open={true}
+          onClose={() => {
+            const id = chargeAfterSave.id;
+            setChargeAfterSave(null);
+            router.push(`/invoices/${id}`);
+            router.refresh();
+          }}
+          invoice={chargeAfterSave}
+        />
+      )}
     </div>
   );
 }
