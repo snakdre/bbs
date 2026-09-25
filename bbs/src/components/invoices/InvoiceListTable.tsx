@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Invoice, Customer } from "@prisma/client";
 import { formatUSD } from "@/lib/money";
+import { deriveDisplayStatus } from "@/lib/status";
 import { InvoiceStatusBadge } from "./InvoiceStatusBadge";
 
 type Row = Invoice & { customer: Customer };
@@ -27,28 +28,37 @@ export function InvoiceListTable({ invoices }: { invoices: Row[] }) {
           </tr>
         </thead>
         <tbody>
-          {invoices.map((inv) => (
-            <tr key={inv.id} className="border-t border-border hover:bg-surface-raised">
-              <td className="px-4 py-3">
-                <Link href={`/invoices/${inv.id}`} className="text-gold hover:underline font-mono">
-                  {inv.invoiceNumber}
-                </Link>
-              </td>
-              <td className="px-4 py-3 text-text">{inv.customer.name}</td>
-              <td className="px-4 py-3 text-text">
-                {inv.issuedAt.toISOString().slice(0, 10)}
-              </td>
-              <td className="px-4 py-3">
-                <InvoiceStatusBadge status={inv.status} />
-              </td>
-              <td className="px-4 py-3 text-right text-text tabular">
-                {formatUSD(inv.totalCents)}
-              </td>
-              <td className="px-4 py-3 text-right text-text tabular">
-                {formatUSD(inv.balanceCents)}
-              </td>
-            </tr>
-          ))}
+          {invoices.map((inv) => {
+            const status = deriveDisplayStatus({
+              status: inv.status,
+              dueAt: inv.dueAt
+            });
+            return (
+              <tr key={inv.id} className="border-t border-border hover:bg-surface-raised">
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/invoices/${inv.id}`}
+                    className="text-gold hover:underline font-mono"
+                  >
+                    {inv.invoiceNumber}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-text">{inv.customer.name}</td>
+                <td className="px-4 py-3 text-text">
+                  {inv.issuedAt.toISOString().slice(0, 10)}
+                </td>
+                <td className="px-4 py-3">
+                  <InvoiceStatusBadge status={status} />
+                </td>
+                <td className="px-4 py-3 text-right text-text tabular">
+                  {formatUSD(inv.totalCents)}
+                </td>
+                <td className="px-4 py-3 text-right text-text tabular">
+                  {formatUSD(inv.balanceCents)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

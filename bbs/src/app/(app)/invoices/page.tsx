@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, Role } from "@/lib/permissions";
 import { Button } from "@/components/ui/Button";
 import { InvoiceListTable } from "@/components/invoices/InvoiceListTable";
-import type { InvoiceStatus } from "@prisma/client";
+import type { InvoiceStatus, Prisma } from "@prisma/client";
 
 const PAGE_SIZE = 25;
 
@@ -14,21 +14,24 @@ export default async function InvoicesPage({
 }) {
   await requireRole(Role.ADMIN, Role.STAFF, Role.VIEWER);
 
-  const status = (searchParams.status ?? "").toUpperCase() as InvoiceStatus | "";
+  const rawStatus = (searchParams.status ?? "").toUpperCase();
   const q = searchParams.q?.trim() ?? "";
   const page = Math.max(1, Number(searchParams.page ?? "1") | 0);
+  const now = new Date();
 
-  const where = {
-    ...(status ? { status } : {}),
-    ...(q
-      ? {
-          OR: [
-            { invoiceNumber: { contains: q, mode: "insensitive" as const } },
-            { customer: { name: { contains: q, mode: "insensitive" as const } } }
-          ]
-        }
-      : {})
-  };
+  const where: Prisma.InvoiceWhereInput = {};
+  if (rawStatus === "OVERDUE") {
+    where.status = { in: ["UNPAID", "PARTIAL"] };
+    where.dueAt = { lt: now };
+  } else if (rawStatus) {
+    where.status = rawStatus as InvoiceStatus;
+  }
+  if (q) {
+    where.OR = [
+      { invoiceNumber: { contains: q, mode: "insensitive" } },
+      { customer: { name: { contains: q, mode: "insensitive" } } }
+    ];
+  }
 
   const [invoices, total] = await Promise.all([
     prisma.invoice.findMany({
@@ -66,7 +69,7 @@ export default async function InvoicesPage({
         />
         <select
           name="status"
-          defaultValue={status}
+          defaultValue={rawStatus}
           className="h-11 px-3 rounded bg-surface-raised border border-border text-text focus:outline-none focus:ring-2 focus:ring-gold"
         >
           <option value="">All statuses</option>
@@ -89,7 +92,11 @@ export default async function InvoicesPage({
               key={p}
               href={{
                 pathname: "/invoices",
-                query: { ...(q ? { q } : {}), ...(status ? { status } : {}), page: p }
+                query: {
+                  ...(q ? { q } : {}),
+                  ...(rawStatus ? { status: rawStatus } : {}),
+                  page: p
+                }
               }}
               className={
                 "px-3 py-1 rounded border text-sm " +

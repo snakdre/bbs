@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, Role } from "@/lib/permissions";
 import { Button } from "@/components/ui/Button";
 import { formatUSD } from "@/lib/money";
+import { deriveDisplayStatus } from "@/lib/status";
+import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 
 export default async function CustomerDetailPage({
   params
@@ -82,7 +84,14 @@ export default async function CustomerDetailPage({
                   <td className="px-4 py-3 text-text">
                     {inv.issuedAt.toISOString().slice(0, 10)}
                   </td>
-                  <td className="px-4 py-3 text-text">{inv.status}</td>
+                  <td className="px-4 py-3 text-text">
+                    <InvoiceStatusBadge
+                      status={deriveDisplayStatus({
+                        status: inv.status,
+                        dueAt: inv.dueAt
+                      })}
+                    />
+                  </td>
                   <td className="px-4 py-3 text-right text-text tabular">
                     {formatUSD(inv.totalCents)}
                   </td>
