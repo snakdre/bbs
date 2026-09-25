@@ -210,79 +210,100 @@ export async function refundPayment(raw: unknown) {
 
   const payment = await prisma.payment.findUnique({
     where: { id: input.paymentId },
-    include: { refunds: true, invoice: true }
+    include: { invoice: true }
   });
   if (!payment) return { ok: false as const, error: "payment_not_found" };
 
-  const alreadyRefunded = payment.refunds.reduce((s, r) => s + r.amountCents, 0);
-  const refundable = payment.amountCents - alreadyRefunded;
   const requestedCents = toCents(input.amount);
-  const refundCents = Math.min(requestedCents, refundable);
-  if (refundCents <= 0) {
-    return { ok: false as const, error: "nothing_to_refund" };
-  }
-
   const invoiceId = payment.invoiceId;
   const invoice = payment.invoice;
 
-  const result = await prisma.$transaction(async (tx) => {
-    const refund = await tx.refund.create({
-      data: {
-        invoiceId,
-        paymentId: payment.id,
-        amountCents: refundCents,
-        reason: input.reason,
-        note: input.note,
-        staffId: user.id
-      }
-    });
-
-    const [payments, refunds] = await Promise.all([
-      tx.payment.findMany({
-        where: { invoiceId },
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Recompute refundable INSIDE the transaction so concurrent refunds
+      // against the same payment can't both pass a stale check.
+      const currentRefunds = await tx.refund.findMany({
+        where: { paymentId: payment.id },
         select: { amountCents: true }
-      }),
-      tx.refund.findMany({
-        where: { invoiceId },
-        select: { amountCents: true }
-      })
-    ]);
-
-    const reconciled = reconcileInvoice(
-      { totalCents: invoice.totalCents, status: invoice.status },
-      payments,
-      refunds
-    );
-
-    const updated = await tx.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        paidCents: reconciled.paidCents,
-        balanceCents: reconciled.balanceCents,
-        status: reconciled.status
+      });
+      const alreadyRefunded = currentRefunds.reduce((s, r) => s + r.amountCents, 0);
+      const refundable = payment.amountCents - alreadyRefunded;
+      const refundCents = Math.min(requestedCents, refundable);
+      if (refundCents <= 0) {
+        // Signal the outer catch to translate this into a soft error.
+        throw new NothingToRefundError();
       }
+
+      const refund = await tx.refund.create({
+        data: {
+          invoiceId,
+          paymentId: payment.id,
+          amountCents: refundCents,
+          reason: input.reason,
+          note: input.note,
+          staffId: user.id
+        }
+      });
+
+      const [payments, refunds] = await Promise.all([
+        tx.payment.findMany({
+          where: { invoiceId },
+          select: { amountCents: true }
+        }),
+        tx.refund.findMany({
+          where: { invoiceId },
+          select: { amountCents: true }
+        })
+      ]);
+
+      const reconciled = reconcileInvoice(
+        { totalCents: invoice.totalCents, status: invoice.status },
+        payments,
+        refunds
+      );
+
+      const updated = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          paidCents: reconciled.paidCents,
+          balanceCents: reconciled.balanceCents,
+          status: reconciled.status
+        }
+      });
+
+      await writeAudit(tx, {
+        action: "PAYMENT_REFUNDED",
+        entityType: "Payment",
+        entityId: payment.id,
+        userId: user.id,
+        before: { paidCents: invoice.paidCents, status: invoice.status },
+        after: {
+          refundId: refund.id,
+          refundedCents: refundCents,
+          newStatus: updated.status,
+          reason: input.reason
+        }
+      });
+
+      return { refund, invoice: updated };
     });
 
-    await writeAudit(tx, {
-      action: "PAYMENT_REFUNDED",
-      entityType: "Payment",
-      entityId: payment.id,
-      userId: user.id,
-      before: { paidCents: invoice.paidCents, status: invoice.status },
-      after: {
-        refundId: refund.id,
-        refundedCents: refundCents,
-        newStatus: updated.status,
-        reason: input.reason
-      }
-    });
+    revalidatePath("/invoices");
+    revalidatePath(`/invoices/${invoiceId}`);
+    revalidatePath(`/customers/${invoice.customerId}`);
+    revalidatePath("/dashboard");
+    return { ok: true as const, refund: result.refund, invoice: result.invoice };
+  } catch (err) {
+    if (err instanceof NothingToRefundError) {
+      return { ok: false as const, error: "nothing_to_refund" };
+    }
+    throw err;
+  }
+}
 
-    return { refund, invoice: updated };
-  });
-
-  revalidatePath("/invoices");
-  revalidatePath(`/invoices/${invoiceId}`);
-  revalidatePath(`/customers/${invoice.customerId}`);
-  revalidatePath("/dashboard");
-  return { ok: true as const, refund: result.refund, invoice: result.invoice };
+class NothingToRefundError extends Error {
+  constructor() {
+    super("nothing_to_refund");
+    this.name = "NothingToRefundError";
+  }
 }
