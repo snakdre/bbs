@@ -36,7 +36,8 @@ export const createDraftBillSchema = z.object({
   lines: z.array(billLineSchema).min(1, "At least one line item is required"),
   invoiceDiscount: discountSchema,
   notes: z.string().trim().max(2000).nullable().default(null),
-  dueAt: z.string().nullable().default(null) // ISO date string or null
+  dueAt: z.string().nullable().default(null), // ISO date string or null
+  chargeImmediately: z.boolean().default(false)
 });
 
 export type CreateDraftBillInput = z.infer<typeof createDraftBillSchema>;

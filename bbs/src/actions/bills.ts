@@ -48,7 +48,7 @@ export async function createDraftBill(raw: unknown) {
         customerId: input.customerId,
         issuedAt: new Date(),
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
-        status: "DRAFT",
+        status: input.chargeImmediately ? "UNPAID" : "DRAFT",
         subtotalCents: totals.subtotalCents,
         discountCents: totals.invoiceDiscountCents,
         taxCents: totals.taxCents,
