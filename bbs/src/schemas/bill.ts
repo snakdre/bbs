@@ -3,14 +3,28 @@ import { z } from "zod";
 const discountSchema = z.object({
   kind: z.enum(["PERCENT", "FIXED", "NONE"]),
   /** For PERCENT: 0..100. For FIXED: dollar string. For NONE: ignored. */
-  value: z.string().default("0")
+  value: z
+    .string()
+    .default("0")
+    .transform((v) => (v.trim() === "" ? "0" : v))
 });
 
 export const billLineSchema = z.object({
   catalogItemId: z.string().nullable(),
   description: z.string().trim().min(1, "Description required").max(500),
   /** Decimal quantity as a string, e.g. "1", "2.5". */
-  quantity: z.string().trim().min(1),
+  quantity: z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+      (v) => /^\d+(\.\d+)?$/.test(v),
+      "Quantity must be a positive decimal number"
+    )
+    .refine((v) => {
+      const n = Number(v);
+      return n > 0 && n <= 9999;
+    }, "Quantity must be greater than 0 and at most 9999"),
   /** Dollar string, e.g. "12.50". */
   unitPrice: z.string().trim().min(1),
   discount: discountSchema,

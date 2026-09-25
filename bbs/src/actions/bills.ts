@@ -86,5 +86,6 @@ export async function createDraftBill(raw: unknown) {
 
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
+  revalidatePath(`/customers/${input.customerId}`);
   return { ok: true as const, invoice };
 }
