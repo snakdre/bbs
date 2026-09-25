@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@prisma/client": "5.20.0",
+    "@react-pdf/renderer": "^3.4.5",
     "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.3",
     "next": "14.2.15",
