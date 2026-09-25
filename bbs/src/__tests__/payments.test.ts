@@ -65,6 +65,23 @@ describe("reconcileInvoice", () => {
     expect(r.paidCents).toBe(0);
   });
 
+  it("transitions PARTIAL back to UNPAID when refunds zero out payments", () => {
+    // Was UNPAID, partial payment made it PARTIAL, refund brings paid to 0.
+    // Should NOT stay PARTIAL (incoherent) and should NOT be REFUNDED (was never PAID).
+    const r = reconcile(1000, "PARTIAL", [400], [400]);
+    expect(r.paidCents).toBe(0);
+    expect(r.balanceCents).toBe(1000);
+    expect(r.status).toBe("UNPAID");
+  });
+
+  it("keeps PARTIAL when a partial refund still leaves some paid", () => {
+    // 400 paid, 100 refunded → 300 paid, still partial.
+    const r = reconcile(1000, "PARTIAL", [400], [100]);
+    expect(r.paidCents).toBe(300);
+    expect(r.balanceCents).toBe(700);
+    expect(r.status).toBe("PARTIAL");
+  });
+
   it("clamps paidCents at zero when refunds exceed payments", () => {
     const r = reconcile(1000, "PAID", [1000], [1500]);
     expect(r.paidCents).toBe(0);

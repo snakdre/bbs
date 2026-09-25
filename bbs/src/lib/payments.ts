@@ -41,9 +41,11 @@ export function reconcileInvoice(
     return { paidCents, balanceCents, status: "REFUNDED" };
   }
 
-  // DRAFT and UNPAID keep their status when paidCents is zero (draft protection).
+  // When paidCents is zero: DRAFT and UNPAID stay as-is (draft protection).
+  // PARTIAL that has been fully refunded goes back to UNPAID (PARTIAL requires some paid).
   if (paidCents === 0) {
-    return { paidCents, balanceCents, status: invoice.status };
+    const nextStatus = invoice.status === "PARTIAL" ? "UNPAID" : invoice.status;
+    return { paidCents, balanceCents, status: nextStatus };
   }
 
   if (paidCents >= invoice.totalCents) {
